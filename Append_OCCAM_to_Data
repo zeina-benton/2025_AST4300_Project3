@@ -1,0 +1,57 @@
+- My task:
+"Collect the list of stars in open clusters and and write code to append the cluster membership and age to the existing data table https://www.sdss.org/dr19/data_access/value-added-catalogs/?vac_id=10017"
+
+In this code, I take a table of APOK stars (Warfield2024) and DS17 OCCAM members (given) and standardizes 
+their APOGEE IDs. After the labels are corrected, I then merge them by matching APOGEE identifiers and 
+keep only the stars present in both datasets. This then appends the OCCAM cluster name and cluster
+membership probability to the APOK table, resulting in a combined dataset of APOK stars with confirmed 
+cluster information as asked. It was slightly difficult understanding aspects of fits files that may cause
+errors, such as having a 'native endian'. I am less confident with this same code working for the other 
+datasets as they do not have APOGEE IDs like these OCCAM members do. There will need to be another variable that merges them.
+
+Code:
+
+import pandas as pd
+from astropy.io import fits
+from astropy.table import Table
+import numpy as np
+
+#Use data table with APOGEE identifiers
+apok2raw = Table.read("Warfield2024.txt", format="ascii.cds")
+apok_df = apok2raw.to_pandas()
+apok_df['APOGEE'] = apok_df['APOGEE'].str.strip()
+apok_df['APOGEE'] = apok_df['APOGEE'].astype(str)
+
+#Load https://data.sdss.org/sas/dr17/env/APOGEE_OCCAM/ members from DR17
+with fits.open("occam_member-DR17.fits") as tb:
+    occam_data = tb[1].data
+
+apogee_id = np.char.strip(occam_data['APOGEE_ID'].astype(str))
+cluster = np.char.strip(occam_data['CLUSTER'].astype(str))
+cg_prob = occam_data['CG_PROB']
+
+# Convert numeric to native endian (common error for fits)
+if cg_prob.dtype.byteorder == '>':
+    cg_prob = cg_prob.byteswap().newbyteorder()
+
+occam_df = pd.DataFrame({
+    'APOGEE_ID': apogee_id,
+    'CLUSTER': cluster,
+    'CG_PROB': cg_prob
+})
+
+merged = pd.merge(
+    apok_df,
+    occam_df,
+    left_on='APOGEE',
+    right_on='APOGEE_ID',
+    how='inner'  # keep only APOK stars that exist in OCCAM
+)
+
+merged.drop(columns=['APOGEE_ID'], inplace=True)
+
+print(merged[['APOGEE','CLUSTER','CG_PROB']])
+
+#Stars from open clusters have now been appended to the previously existing data table from Warfield2024
+#Below shows the cluster identifier and APOGEE ID. This is only a show of its success, the dataframe 
+#'merged' has all information in the Warfield2024 table.
