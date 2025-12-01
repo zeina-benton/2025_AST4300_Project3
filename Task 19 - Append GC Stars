@@ -1,0 +1,81 @@
+Task: Collect the list of stars in globular clusters and write code to append the cluster membership and age to the existing data 
+table https://www.sdss.org/dr19/data_access/value-added-catalogs/?vac_id=105 (only viable if we can find ages for these clusters).
+
+Methods: We combined three value-added catalogs—the ASTRA VAC, the globular cluster membership catalog, and the globular cluster 
+parameters catalog—to identify cluster member stars and append their information to the ASTRA dataset. Each FITS file was read 
+using astropy.table, and only the 1D scalar columns were retained to ensure compatibility with pandas. Column names were 
+standardized so that the tables could be merged consistently. The ASTRA table was first merged with the GC membership catalog 
+using the APOGEE ID. This table was then merged with the GC parameters catalog using the cluster name to append the cluster 
+properties. The resulting dataset contains all ASTRA stars with additional GC columns where applicable. A second dataset, 
+gc_only, was created by selecting only the stars with cluster names, producing a clean list of confirmed cluster members. Both 
+tables were saved in CSV and Parquet formats for analysis.
+
+
+
+import os
+import glob
+from astropy.io import fits
+from astropy.table import Table
+import numpy as np
+import pandas as pd
+
+
+# load the original files
+
+directory = r"C:\Users\abchh\OneDrive\1. School\17. UF Fall 2025\AST 4300 - Galactic Astronomy\Galactic - Project 3\astraAllStarASPCAP-0.6.0.fits"
+
+astra_file = glob.glob(os.path.join(directory, "*astraAllStarASPCAP*fits"))
+gc_members_file = glob.glob(os.path.join(directory, "*GC_members_VAC-v1_1*fits"))
+gc_params_file = glob.glob(os.path.join(directory, "*GC_parameters*fits"))
+
+
+# convert to pandas dataframe
+
+astra_tab = Table.read(astra_file[0], hdu=2)
+one_d_cols = [name for name in astra_tab.colnames if astra_tab[name].ndim == 1]
+
+members_tab = Table.read(gc_members_file[0], hdu=1)
+members_one_d = [c for c in members_tab.colnames if members_tab[c].ndim == 1]
+
+params_tab  = Table.read(gc_params_file[0], hdu=1)
+params_one_d  = [c for c in params_tab.colnames  if params_tab[c].ndim == 1]
+
+astra_df = astra_tab[one_d_cols].to_pandas()
+members_df = members_tab[members_one_d].to_pandas()
+params_df  = params_tab[params_one_d].to_pandas()
+
+
+# standarize column names
+
+members_df = members_df.rename(columns={"APOGEE_ID": "sdss4_apogee_id"})
+params_df = params_df.rename(columns={"GC_name": "GC_NAME"})
+
+
+# merge
+
+astra_plus_members = astra_df.merge(
+    members_df,
+    on="sdss4_apogee_id",
+    how="left")
+
+astra_with_gc = astra_plus_members.merge(
+    params_df,
+    on="GC_NAME",
+    how="left")
+
+
+# globular clusters only
+
+gc_only = astra_with_gc[astra_with_gc["GC_NAME"].notna()]
+
+
+# save as csv
+
+astra_with_gc.to_csv("astra_with_gc.csv", index=False)
+gc_only.to_csv("gc_only.csv", index=False)
+
+
+# save as parquet
+
+astra_with_gc.to_parquet("astra_with_gc.parquet", index=False)
+gc_only.to_parquet("gc_only.parquet", index=False)
